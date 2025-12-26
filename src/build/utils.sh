@@ -31,6 +31,10 @@ log_app_ver() {
     echo "$1" >> "./release/app_versions.md"
 }
 
+log_build_info() {
+    echo "$1" >> "./release/tools_versions.md"
+}
+
 log_tools_ver() {
     if [ ! -f "tools_version_logged" ]; then
         touch "tools_version_logged"
@@ -63,11 +67,16 @@ log_tools_ver() {
 
 # Download Github assets requirement:
 dl_gh() {
+    local header_args=""
+    if [[ -n "$GITHUB_TOKEN" ]]; then
+        header_args="--header=Authorization: token $GITHUB_TOKEN"
+    fi
 	if [ $3 == "prerelease" ]; then
+		local repo=$1
 		local repo=$1
 		for repo in $1 ; do
 			local owner=$2 tag=$3 found=0 assets=0
-			releases=$(wget -qO- "https://api.github.com/repos/$owner/$repo/releases")
+			releases=$(wget $header_args -qO- "https://api.github.com/repos/$owner/$repo/releases")
 			while read -r line; do
 				if [[ $line == *"\"tag_name\":"* ]]; then
 					tag_name=$(echo $line | cut -d '"' -f 4)
@@ -111,7 +120,7 @@ dl_gh() {
 	else
 		for repo in $1 ; do
 			tags=$( [ "$3" == "latest" ] && echo "latest" || echo "tags/$3" )
-			wget -qO- "https://api.github.com/repos/$2/$repo/releases/$tags" \
+			wget $header_args -qO- "https://api.github.com/repos/$2/$repo/releases/$tags" \
 			| jq -r '.assets[] | "\(.browser_download_url) \(.name)"' \
 			| while read -r url names; do
    				if [[ $url != *.asc ]]; then
