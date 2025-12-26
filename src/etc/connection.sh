@@ -1,8 +1,15 @@
 #!/bin/bash
 
 # Check github connection stable or not:
+# Check github connection stable or not:
 check_connection() {
-	if curl -s -I "https://api.github.com/repos/revanced/revanced-patches/releases/latest" > /dev/null; then
+	if [[ -n "$GITHUB_TOKEN" ]]; then
+		response=$(curl -s -I -H "Authorization: token $GITHUB_TOKEN" "https://api.github.com/repos/revanced/revanced-patches/releases/latest")
+	else
+		response=$(curl -s -I "https://api.github.com/repos/revanced/revanced-patches/releases/latest")
+	fi
+	
+	if echo "$response" | grep -q "HTTP/2 200"; then
 		echo "internet_error=0" >> $GITHUB_OUTPUT
 		echo -e "\e[32mGithub connection OK\e[0m"
 	else
