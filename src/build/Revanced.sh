@@ -125,11 +125,8 @@ revanced_dl(){
 	# Patch Spotjfy Arm64-v8a
 	j="i"
 	get_patches_key "Spotjfy-revanced"
-	if get_apkpure "com.spot"$j"fy.music" "spotjfy-arm64-v8a" "spot"$j"fy-music-and-podcasts-for-android/com.spot"$j"fy.music"; then
-		patch "spotjfy-arm64-v8a" "revanced"
-	else
-		red_log "[-] Skipping Spotjfy (download failed)"
-	fi
+	get_apkpure "com.spot"$j"fy.music" "spotjfy-arm64-v8a" "spot"$j"fy-music-and-podcasts-for-android/com.spot"$j"fy.music"
+	patch "spotjfy-arm64-v8a" "revanced"
 	# Patch Proton mail
 	get_patches_key "protonmail-revanced"
 	get_apk "ch.protonmail.android" "protonmail" "protonmail-encrypted-email" "proton-technologies-ag/protonmail-encrypted-email/proton-mail-encrypted-email"

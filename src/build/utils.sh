@@ -385,7 +385,7 @@ get_apkpure() {
 	else
 		local base_apk="$2.apk"
 	fi
-	local ua="Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Mobile Safari/537.36"
+
 	local page_url=""
 	if [[ -n "$version" ]]; then
 		page_url="https://apkpure.com/$3/downloading/$version"
@@ -393,38 +393,49 @@ get_apkpure() {
 		page_url="https://apkpure.com/$3/downloading/"
 	fi
 
+	local attempt=0
 	local page=""
-	page=$(curl -fsSL -A "$ua" "$page_url" 2>/dev/null) || {
-		red_log "[-] Failed to fetch APKPure page for $2"
-		return 1
-	}
+	local download_url=""
 
-	if [[ -z "$version" ]]; then
-		version="$(echo "$page" | awk -F'Download APK | \\(' '/<h2>/{print $2}' | head -n 1)"
-	fi
+	while [ $attempt -lt 5 ]; do
+		page="$(req "$page_url" - "https://apkpure.com/")"
+		if [[ -z "$page" ]] || echo "$page" | grep -qiE 'forbidden|access denied|captcha|cloudflare'; then
+			sleep 2
+			attempt=$((attempt + 1))
+			continue
+		fi
+
+		if [[ -z "$version" ]]; then
+			version="$(echo "$page" | awk -F'Download APK | \\(' '/<h2>/{print $2}' | head -n 1)"
+		fi
+
+		download_url="$(echo "$page" | grep -oP '<a[^>]+id="download_link"[^>]+href="\Khttps://[^"]+' | head -n 1)"
+		if [[ -z "$download_url" ]]; then
+			download_url="$(echo "$page" | grep -oP 'href="\Khttps://d\.apkpure\.com/[^"]+' | head -n 1)"
+		fi
+		if [[ -z "$download_url" ]]; then
+			download_url="$(echo "$page" | grep -oP 'href="\Khttps://download\.apkpure\.com/[^"]+' | head -n 1)"
+		fi
+		if [[ -n "$download_url" ]]; then
+			break
+		fi
+		sleep 1
+		attempt=$((attempt + 1))
+	done
 
 	green_log "[+] Downloading $2 version: $version $4"
 
-	local download_url=""
-	download_url="$(echo "$page" | grep -oP '<a[^>]+id="download_link"[^>]+href="\Khttps://[^"]+' | head -n 1)"
-	if [[ -z "$download_url" ]]; then
-		download_url="$(echo "$page" | grep -oP 'href="\Khttps://[^"]+apkpure[^"]+\.apk[^"]*' | head -n 1)"
-	fi
 	if [[ -z "$download_url" ]]; then
 		red_log "[-] Failed to resolve APKPure download URL for $2"
-		return 1
+		exit 1
 	fi
 
-	curl -fL --retry 3 --retry-delay 2 -A "$ua" -o "./download/$base_apk" "$download_url" 2>/dev/null || {
-		red_log "[-] Failed to download $2 from APKPure"
-		return 1
-	}
-
+	req "$download_url" "$base_apk" "$page_url"
 	if [[ -f "./download/$base_apk" ]]; then
 		green_log "[+] Successfully downloaded $2"
 	else
 		red_log "[-] Failed to download $2"
-		return 1
+		exit 1
 	fi
 	if [[ $4 == "Bundle" ]]; then
 		green_log "[+] Merge splits apk to standalone apk"
