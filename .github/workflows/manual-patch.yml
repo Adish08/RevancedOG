@@ -357,7 +357,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4.2.2
       - name: Cache
         uses: actions/download-artifact@v4
         with:
@@ -396,7 +396,7 @@ jobs:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4.2.2
       - name: Preparing to patch
         uses: ./.github/actions/preparing
       - name: Install library
@@ -424,7 +424,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4.2.2
       - name: Cache
         uses: actions/download-artifact@v4
         with:
@@ -480,6 +480,7 @@ jobs:
 
       - name: Release Note
         run: |
+             mkdir -p ./release
              echo "## [Revanced Extended Arsclib](https://github.com/inotia00/revanced-patches-arsclib/releases)" > release_notes.md
              echo -e "\n### Apps:" >> release_notes.md
              cat ./release/app_versions.md | perl -00 -ne 'print unless $seen{$_}++' >> release_notes.md || true
@@ -528,6 +529,7 @@ jobs:
 
       - name: Release Note
         run: |
+             mkdir -p ./release
              echo "## [Twitter Piko Stable](https://github.com/crimera/piko/releases)" > release_notes.md
              echo -e "\n### Apps:" >> release_notes.md
              cat ./release/app_versions.md | perl -00 -ne 'print unless $seen{$_}++' >> release_notes.md || true
@@ -630,5 +632,4 @@ jobs:
           tag_name: ${{ needs.set_tag.outputs.release_tag }}
           release_notes: release_notes.md
           prerelease: ${{ github.ref_name == 'dev' }}
-
 

@@ -51,12 +51,12 @@ jobs:
 
  
       - name: Re-run workflow if github connection not stable
-        if: always() && steps.check-rv.outcome == 'skipped' && env.retry_count < env.max_retries
+        if: always() && steps.check-rv.outcome == 'skipped'
         uses: actions/github-script@v7
         with:
           script: |
-            const maxRetries = ${{ env.max_retries }};
-            let retryCount = ${{ env.retry_count }};
+            const maxRetries = 3;
+            let retryCount = parseInt('${{ github.event.inputs.retry_count }}') || 1;
             if (retryCount < maxRetries) {
               retryCount += 1;
               await github.rest.actions.createWorkflowDispatch({
@@ -71,8 +71,6 @@ jobs:
             }
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          retry_count: ${{ github.event.inputs.retry_count }}
-          max_retries: 3
       - name: Set Release Tag
         id: tag
         run: echo "release_tag=v$(date +'%Y.%m.%d-%H%M')" >> $GITHUB_OUTPUT

@@ -67,69 +67,46 @@ log_tools_ver() {
 
 # Download Github assets requirement:
 dl_gh() {
-    local header_args=""
-    if [[ -n "$GITHUB_TOKEN" ]]; then
-        header_args="--header=Authorization: token $GITHUB_TOKEN"
-    fi
-	if [ $3 == "prerelease" ]; then
-		local repo=$1
-		local repo=$1
-		for repo in $1 ; do
-			local owner=$2 tag=$3 found=0 assets=0
-			releases=$(wget $header_args -qO- "https://api.github.com/repos/$owner/$repo/releases")
-			while read -r line; do
-				if [[ $line == *"\"tag_name\":"* ]]; then
-					tag_name=$(echo $line | cut -d '"' -f 4)
-					if [ "$tag" == "latest" ] || [ "$tag" == "prerelease" ]; then
-						found=1
-					else
-						found=0
-					fi
-				fi
-				if [[ $line == *"\"prerelease\":"* ]]; then
-					prerelease=$(echo $line | cut -d ' ' -f 2 | tr -d ',')
-					if [ "$tag" == "prerelease" ] && [ "$prerelease" == "true" ] ; then
-						found=1
-      					elif [ "$tag" == "prerelease" ] && [ "$prerelease" == "false" ]; then
-	   					found=1
-					fi
-				fi
-				if [[ $line == *"\"assets\":"* ]]; then
-					if [ $found -eq 1 ]; then
-						assets=1
-					fi
-				fi
-				if [[ $line == *"\"browser_download_url\":"* ]]; then
-					if [ $assets -eq 1 ]; then
-						url=$(echo $line | cut -d '"' -f 4)
-							if [[ $url != *.asc ]]; then
-							name=$(basename "$url")
-							wget -q -O "$name" "$url"
-							green_log "[+] Downloading $name from $owner"
-						fi
-					fi
-				fi
-				if [[ $line == *"],"* ]]; then
-					if [ $assets -eq 1 ]; then
-						assets=0
-						break
-					fi
-				fi
-			done <<< "$releases"
-		done
-	else
-		for repo in $1 ; do
-			tags=$( [ "$3" == "latest" ] && echo "latest" || echo "tags/$3" )
-			wget $header_args -qO- "https://api.github.com/repos/$2/$repo/releases/$tags" \
-			| jq -r '.assets[] | "\(.browser_download_url) \(.name)"' \
-			| while read -r url names; do
-   				if [[ $url != *.asc ]]; then
-					green_log "[+] Downloading $names from $2"
-					wget -q -O "$names" $url || { red_log "[-] Failed to download $names"; exit 1; }
-     				fi
-			done
-		done
+	local repos="$1"
+	local owner="$2"
+	local tag="$3"
+
+	local wget_args=(
+		"-q"
+		"--header=User-Agent: Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Mobile Safari/537.36"
+	)
+	if [[ -n "$GITHUB_TOKEN" ]]; then
+		wget_args+=("--header=Authorization: token $GITHUB_TOKEN")
 	fi
+
+	for repo in $repos; do
+		local api_url=""
+		if [[ "$tag" == "prerelease" ]]; then
+			api_url="https://api.github.com/repos/$owner/$repo/releases"
+			wget "${wget_args[@]}" -O- "$api_url" \
+				| jq -r 'first(.[] | select(.prerelease == true)) | .assets[]? | "\(.browser_download_url) \(.name)"' \
+				| while read -r url name; do
+					if [[ -n "$url" && -n "$name" && "$url" != *.asc ]]; then
+						green_log "[+] Downloading $name from $owner"
+						wget "${wget_args[@]}" -O "$name" "$url" || { red_log "[-] Failed to download $name"; exit 1; }
+					fi
+				done
+		else
+			if [[ "$tag" == "latest" ]]; then
+				api_url="https://api.github.com/repos/$owner/$repo/releases/latest"
+			else
+				api_url="https://api.github.com/repos/$owner/$repo/releases/tags/$tag"
+			fi
+			wget "${wget_args[@]}" -O- "$api_url" \
+				| jq -r '.assets[]? | "\(.browser_download_url) \(.name)"' \
+				| while read -r url name; do
+					if [[ -n "$url" && -n "$name" && "$url" != *.asc ]]; then
+						green_log "[+] Downloading $name from $owner"
+						wget "${wget_args[@]}" -O "$name" "$url" || { red_log "[-] Failed to download $name"; exit 1; }
+					fi
+				done
+		fi
+	done
 }
 
 #################################################
@@ -142,34 +119,42 @@ get_patches_key() {
 	includeLinesFound=false
  	sed -i 's/\r$//' src/patches/$1/include-patches
 	sed -i 's/\r$//' src/patches/$1/exclude-patches
-	if [[ $(ls revanced-cli-*.jar) =~ revanced-cli-(v?)([0-9]+) ]]; then
-		num=${BASH_REMATCH[2]}
-		if [ $num -ge 5 ]; then
-			while IFS= read -r line1; do
-				excludePatches+=" -d \"$line1\""
-				excludeLinesFound=true
-			done < src/patches/$1/exclude-patches
-			while IFS= read -r line2; do
-				if [[ "$line2" == *"|"* ]]; then
-					patch_name="${line2%%|*}"
-					options="${line2#*|}"
-					includePatches+=" -e \"${patch_name}\" ${options}"
-				else
-					includePatches+=" -e \"$line2\""
-				fi
-				includeLinesFound=true
-			done < src/patches/$1/include-patches
-		else
-			while IFS= read -r line1; do
-				excludePatches+=" -e \"$line1\""
-				excludeLinesFound=true
-			done < src/patches/$1/exclude-patches
-			
-			while IFS= read -r line2; do
-				includePatches+=" -i \"$line2\""
-				includeLinesFound=true
-			done < src/patches/$1/include-patches
+	local cli_jar=""
+	local num=0
+	cli_jar=$(ls revanced-cli-*.jar 2>/dev/null | head -n 1)
+	if [[ -n "$cli_jar" ]]; then
+		if [[ "$cli_jar" =~ -v?([0-9]+)\. ]]; then
+			num=${BASH_REMATCH[1]}
+		elif [[ "$cli_jar" =~ revanced-cli-([0-9]+) ]]; then
+			num=${BASH_REMATCH[1]}
 		fi
+	fi
+
+	if [ "$num" -ge 5 ]; then
+		while IFS= read -r line1; do
+			excludePatches+=" -d \"$line1\""
+			excludeLinesFound=true
+		done < src/patches/$1/exclude-patches
+		while IFS= read -r line2; do
+			if [[ "$line2" == *"|"* ]]; then
+				patch_name="${line2%%|*}"
+				options="${line2#*|}"
+				includePatches+=" -e \"${patch_name}\" ${options}"
+			else
+				includePatches+=" -e \"$line2\""
+			fi
+			includeLinesFound=true
+		done < src/patches/$1/include-patches
+	else
+		while IFS= read -r line1; do
+			excludePatches+=" -e \"$line1\""
+			excludeLinesFound=true
+		done < src/patches/$1/exclude-patches
+		
+		while IFS= read -r line2; do
+			includePatches+=" -i \"$line2\""
+			includeLinesFound=true
+		done < src/patches/$1/include-patches
 	fi
 	if [ "$excludeLinesFound" = false ]; then
 		excludePatches=""
@@ -191,15 +176,19 @@ _req() {
     local output="$2"
     local referer="$3"
     
+    # Initialize cookie file to avoid wget error
+    touch "$COOKIE_FILE"
+
     local wget_args=(
         "-nv"
-        "--header=User-Agent: Mozilla/5.0 (Android 14; Mobile; rv:134.0) Gecko/134.0 Firefox/134.0"
-        "--header=Content-Type: application/octet-stream"
-        "--header=Accept-Language: en-US,en;q=0.9"
-        "--header=Connection: keep-alive"
-        "--header=Upgrade-Insecure-Requests: 1"
-        "--header=Cache-Control: max-age=0"
+        "--header=User-Agent: Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
         "--header=Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8"
+        "--header=Accept-Language: en-US,en;q=0.9"
+        "--header=Sec-Fetch-Site: same-origin"
+        "--header=Sec-Fetch-Mode: navigate"
+        "--header=Sec-Fetch-User: ?1"
+        "--header=Sec-Fetch-Dest: document"
+        "--header=Upgrade-Insecure-Requests: 1"
         "--load-cookies" "$COOKIE_FILE"
         "--save-cookies" "$COOKIE_FILE"
         "--keep-session-cookies"
@@ -247,6 +236,9 @@ dl_apk() {
 	if [[ "$url" == "https://www.apkmirror.com" ]]; then
 		exit 0
 	fi
+    
+    # Add a small delay to avoid 403 Forbidden from APKMirror
+    sleep 3
 	req "$url" "$output" "$referer"
 }
 get_apk() {
