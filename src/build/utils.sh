@@ -385,20 +385,46 @@ get_apkpure() {
 	else
 		local base_apk="$2.apk"
 	fi
+	local ua="Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Mobile Safari/537.36"
+	local page_url=""
 	if [[ -n "$version" ]]; then
-		url="https://apkpure.com/$3/downloading/$version"
+		page_url="https://apkpure.com/$3/downloading/$version"
 	else
-		url="https://apkpure.com/$3/downloading/"
-		version="$(req "$url" - | awk -F'Download APK | \\(' '/<h2>/{print $2}')"
+		page_url="https://apkpure.com/$3/downloading/"
 	fi
+
+	local page=""
+	page=$(curl -fsSL -A "$ua" "$page_url" 2>/dev/null) || {
+		red_log "[-] Failed to fetch APKPure page for $2"
+		return 1
+	}
+
+	if [[ -z "$version" ]]; then
+		version="$(echo "$page" | awk -F'Download APK | \\(' '/<h2>/{print $2}' | head -n 1)"
+	fi
+
 	green_log "[+] Downloading $2 version: $version $4"
-	url="$(req "$url" - | grep -oP '<a[^>]+id="download_link"[^>]+href="\Khttps://[^"]+')"
-	req "$url" "$base_apk"
+
+	local download_url=""
+	download_url="$(echo "$page" | grep -oP '<a[^>]+id="download_link"[^>]+href="\Khttps://[^"]+' | head -n 1)"
+	if [[ -z "$download_url" ]]; then
+		download_url="$(echo "$page" | grep -oP 'href="\Khttps://[^"]+apkpure[^"]+\.apk[^"]*' | head -n 1)"
+	fi
+	if [[ -z "$download_url" ]]; then
+		red_log "[-] Failed to resolve APKPure download URL for $2"
+		return 1
+	fi
+
+	curl -fL --retry 3 --retry-delay 2 -A "$ua" -o "./download/$base_apk" "$download_url" 2>/dev/null || {
+		red_log "[-] Failed to download $2 from APKPure"
+		return 1
+	}
+
 	if [[ -f "./download/$base_apk" ]]; then
 		green_log "[+] Successfully downloaded $2"
 	else
 		red_log "[-] Failed to download $2"
-		exit 1
+		return 1
 	fi
 	if [[ $4 == "Bundle" ]]; then
 		green_log "[+] Merge splits apk to standalone apk"
